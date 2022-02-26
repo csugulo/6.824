@@ -3,6 +3,7 @@ mkdir -p bin
 rm -rf bin/*
 go build -race -o bin/coordinator
 go build -race -o bin/worker
+go build -race -o bin/mrsequential
 
 
 mkdir -p lib

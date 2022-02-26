@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -14,7 +15,8 @@ import (
 )
 
 const (
-	MAX_UNFINISHED_TASK = 10
+	TASK_QUEUE_SIZE = 1
+	COORDINATE_URL  = "http://127.0.0.1:3921/coordinate"
 )
 
 type PluginFuncs struct {
@@ -25,114 +27,101 @@ type PluginFuncs struct {
 type Worker struct {
 	pluginFuncs map[string]PluginFuncs
 	workerID    string
-	tasks       map[string]*Task
+	tasks       chan Task
+
+	tmpDirName string
 
 	httpClient *http.Client
 	lock       sync.Mutex
+
+	done chan bool
 }
 
-func (w *Worker) ReportTask(task *Task) error {
-	if task == nil {
-		return fmt.Errorf("can not report nil task")
-	}
-	payload, _ := json.Marshal(Request{
-		WorkerID: w.workerID,
-		Tasks: map[string]Task{
-			task.ID: *task,
-		},
-	})
-	log.Printf("Worker: %v, send POST: %v", w.workerID, string(payload))
-	httpRequest, _ := http.NewRequest(http.MethodPost, GET_TASK_URL, bytes.NewBuffer(payload))
-	if httpResponse, err := w.httpClient.Do(httpRequest); err != nil {
-		return fmt.Errorf("Coordinator is down")
-	} else {
-		body, _ := ioutil.ReadAll(httpResponse.Body)
-		log.Printf("Worker: %v, get response: %v", w.workerID, string(body))
-		var response Response
-		json.Unmarshal(body, &response)
-		if response.StatusCode != 0 {
-			return fmt.Errorf("report task status failed, task: %v, statusMessage: %v", task.ID, response.StatusMessage)
-		}
-	}
-	return nil
-}
-
-func (w *Worker) fetch(fetchTask bool) error {
-	payload, _ := json.Marshal(Request{
+func (w *Worker) coordinate(task *Task, fetchTask bool) error {
+	request := Request{
 		WorkerID:  w.workerID,
 		FetchTask: fetchTask,
-	})
-	log.Printf("Worker: %v, send POST: %v", w.workerID, string(payload))
-	httpRequest, _ := http.NewRequest(http.MethodPost, GET_TASK_URL, bytes.NewBuffer(payload))
+	}
+	if task != nil {
+		request.Tasks = map[string]Task{
+			task.ID: *task,
+		}
+	}
+	payload, _ := json.Marshal(request)
+	log.Printf("request: %v", string(payload))
+	httpRequest, _ := http.NewRequest(http.MethodPost, COORDINATE_URL, bytes.NewBuffer(payload))
 	if httpResponse, err := w.httpClient.Do(httpRequest); err != nil {
-		return fmt.Errorf("Coordinator is down")
+		return fmt.Errorf("coordinator is down")
 	} else {
 		body, _ := ioutil.ReadAll(httpResponse.Body)
-		log.Printf("Worker: %v, get response: %v", w.workerID, string(body))
+		log.Printf("response: %v", string(body))
 		var response Response
 		json.Unmarshal(body, &response)
 		if response.StatusCode != 0 {
-			return fmt.Errorf("Worker: %v get task failed", w.workerID)
+			return fmt.Errorf("fetch task failed")
 		}
 		if response.Task != nil {
 			response.Task.Status = TASK_PENDING
-			w.tasks[response.Task.ID] = response.Task
-			log.Printf("Worker: %v get task: %v", w.workerID, response.Task)
+			response.Task.WorkerID = w.workerID
+			w.tasks <- *response.Task
+			log.Printf("fetch task: %v", response.Task)
 		}
 	}
 	return nil
 }
 
-func (w *Worker) sync() {
-	tick := time.NewTicker(time.Second * 1)
-	log.Printf("Worker: %v sync()", w.workerID)
-	for {
-		select {
-		case <-tick.C:
-			w.lock.Lock()
-			defer w.lock.Unlock()
-			unfinishedTaskNum := 0
-			for _, task := range w.tasks {
-				switch task.Status {
-				case TASK_PENDING, TASK_RUNNING:
-					unfinishedTaskNum++
+func (w *Worker) sync() error {
+	log.Println("sync")
+	w.lock.Lock()
+	w.lock.Unlock()
+	if len(w.tasks) == cap(w.tasks) {
+		log.Println("task queue is full, only send heatbeat to coordinator")
+		return w.coordinate(nil, false)
+	} else {
+		return w.coordinate(nil, true)
+	}
+}
+
+func (w *Worker) startSyncScheduer() {
+	go func() {
+		log.Println("start sync scheduler")
+		tick := time.NewTicker(time.Second * 1)
+		for {
+			select {
+			case <-tick.C:
+				if err := w.sync(); err != nil {
+					log.Printf("sync failed: %v", err)
+					w.done <- true
 				}
 			}
-			w.fetch(unfinishedTaskNum < MAX_UNFINISHED_TASK)
 		}
-	}
+	}()
 }
 
-func (w *Worker) pickPendingTask() *Task {
-	for _, t := range w.tasks {
-		if t.Status == TASK_PENDING {
-			return t
-		}
+func (w *Worker) startWorkScheduler() {
+	if err := os.MkdirAll(w.tmpDirName, 0700); err != nil {
+		log.Printf("create dir: %v failed, err: %v", w.tmpDirName, err)
+		w.done <- true
 	}
-	return nil
-}
 
-func (w *Worker) work() {
-	tick := time.NewTicker(time.Second * 1)
-	log.Printf("Worker: %v work()", w.workerID)
-	for {
-		select {
-		case <-tick.C:
-			w.lock.Lock()
-			defer w.lock.Unlock()
-			task := w.pickPendingTask()
-			log.Printf("Worker: %v pick task: %v", w.workerID, task)
-			if task != nil {
-				task.Status = task.Run()
-				w.ReportTask(task)
+	go func() {
+		for {
+			select {
+			case t := <-w.tasks:
+				t.Status = t.Run()
+				w.coordinate(&t, false)
+			default:
+				log.Println("task queue is empty, wait...")
+				time.Sleep(time.Second * 1)
 			}
 		}
-	}
+	}()
 }
 
 func (w *Worker) Run() {
-	go w.sync()
-	w.work()
+	w.startSyncScheduer()
+	w.startWorkScheduler()
+	<-w.done
 }
 
 func MakeWorker() *Worker {
@@ -140,7 +129,9 @@ func MakeWorker() *Worker {
 		pluginFuncs: make(map[string]PluginFuncs),
 		workerID:    uuid.New().String(),
 		httpClient:  &http.Client{Timeout: 5 * time.Second},
-		tasks:       make(map[string]*Task),
+		tasks:       make(chan Task, TASK_QUEUE_SIZE),
+		done:        make(chan bool),
 	}
+	worker.tmpDirName = fmt.Sprintf("tmp/%v", worker.workerID)
 	return worker
 }

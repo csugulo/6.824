@@ -11,6 +11,7 @@ import (
 const (
 	MR_COORDINATOR_MAIN = "coordinator"
 	MR_WORKER_MAIN      = "worker"
+	MR_SEQUENTIAL       = "mrsequential"
 )
 
 func main() {
@@ -26,6 +27,9 @@ func main() {
 	case MR_WORKER_MAIN:
 		app := &apps.WorkerApp{}
 		app.Main(os.Args[1:]...)
+	case MR_SEQUENTIAL:
+		app := &apps.MrSequential{}
+		app.Main(os.Args)
 	default:
 		log.Fatalf("Unknown app name: %v", os.Args[0])
 		os.Exit(1)

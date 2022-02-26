@@ -1,8 +1,8 @@
 package mr
 
 import (
+	"fmt"
 	"hash/fnv"
-	"log"
 	"plugin"
 )
 
@@ -15,21 +15,21 @@ func ihash(key string) int {
 type MapFunc = func(string, string) []KeyValue
 type ReduceFunc = func(string, []string) string
 
-func loadPlugin(fileName string) (MapFunc, ReduceFunc) {
+func loadPlugin(fileName string) (MapFunc, ReduceFunc, error) {
 	p, err := plugin.Open(fileName)
 	if err != nil {
-		log.Fatalf("cannot load plugin %v", fileName)
+		return nil, nil, fmt.Errorf("cannot load plugin %v", fileName)
 	}
 	xmapf, err := p.Lookup("Map")
 	if err != nil {
-		log.Fatalf("cannot find Map in %v", fileName)
+		return nil, nil, fmt.Errorf("cannot find Map in %v", fileName)
 	}
 	mapf := xmapf.(MapFunc)
 	xreducef, err := p.Lookup("Reduce")
 	if err != nil {
-		log.Fatalf("cannot find Reduce in %v", fileName)
+		return nil, nil, fmt.Errorf("cannot find Reduce in %v", fileName)
 	}
 	reducef := xreducef.(ReduceFunc)
 
-	return mapf, reducef
+	return mapf, reducef, nil
 }
