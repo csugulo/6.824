@@ -11,7 +11,6 @@ package main
 import (
 	crand "crypto/rand"
 	"math/big"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,7 +24,7 @@ func maybeCrash() {
 	rr, _ := crand.Int(crand.Reader, max)
 	if rr.Int64() < 330 {
 		// crash!
-		os.Exit(1)
+		panic("crash!")
 	} else if rr.Int64() < 660 {
 		// delay for a while.
 		maxms := big.NewInt(10 * 1000)

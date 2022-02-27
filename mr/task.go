@@ -62,6 +62,7 @@ type Task struct {
 }
 
 func (task *Task) Map() TaskStatus {
+
 	if len(task.Paths) != 1 {
 		return TASK_FAILED
 	}
@@ -145,7 +146,13 @@ func (task *Task) Reduce() TaskStatus {
 	return TASK_SUCCESS
 }
 
-func (task *Task) Run() TaskStatus {
+func (task *Task) Run() (status TaskStatus) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("panic occurred: %v", err)
+			status = TASK_FAILED
+		}
+	}()
 	switch task.Type {
 	case MAP_TASK:
 		return task.Map()
