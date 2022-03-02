@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	apps "github.com/csugulo/mr/apps"
+	apps "github.com/csugulo/6.824/mr/apps"
 )
 
 const (

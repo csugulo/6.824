@@ -5,7 +5,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/csugulo/mr/mr"
+	"github.com/csugulo/6.824/mr/mr"
 )
 
 type CoordinatorApp struct{}

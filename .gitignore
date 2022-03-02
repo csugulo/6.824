@@ -1,5 +1,5 @@
 .vscode/
-bin/
-lib/
-tmp/
-mr-*
+mr/bin/
+mr/lib/
+mr/tmp/
+mr/mr-*

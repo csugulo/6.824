@@ -12,7 +12,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/csugulo/mr/mr"
+	"github.com/csugulo/6.824/mr/mr"
 )
 
 // The mapping function is called once for each piece of the input.

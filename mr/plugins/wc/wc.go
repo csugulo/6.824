@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/csugulo/mr/mr"
+	"github.com/csugulo/6.824/mr/mr"
 )
 
 func Map(filename string, contents string) []mr.KeyValue {

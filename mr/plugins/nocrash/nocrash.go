@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/csugulo/mr/mr"
+	"github.com/csugulo/6.824/mr/mr"
 )
 
 func maybeCrash() {
